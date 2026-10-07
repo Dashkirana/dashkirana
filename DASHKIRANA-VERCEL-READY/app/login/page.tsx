@@ -1,483 +1,275 @@
-```tsx
-'use client';
+'use client'
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { ArrowLeft, ShieldCheck, AlertCircle } from 'lucide-react';
-import { supabase } from '../../lib/supabase/client';
-
-const isSupabaseMode =
-  process.env.NEXT_PUBLIC_DATA_MODE === 'supabase';
+import { FormEvent, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase/client'
+import { Loader2, Mail, Lock, Chrome } from 'lucide-react'
 
 export default function LoginPage() {
-  const router = useRouter();
+  const router = useRouter()
 
-  const [phone, setPhone] = useState('');
-  const [name, setName] = useState('');
-  const [otp, setOtp] = useState('');
-  const [step, setStep] = useState<'phone' | 'otp'>('phone');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  useEffect(() => {
-    // Load previously saved customer information
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('dashkirana_user');
+  async function handleEmailLogin(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
 
-      if (saved) {
-        try {
-          const u = JSON.parse(saved);
+    setError('')
 
-          if (u.phone) {
-            setPhone(u.phone);
-          }
-
-          if (u.name) {
-            setName(u.name);
-          }
-        } catch {
-          // Ignore invalid localStorage data
-        }
-      }
-    }
-  }, []);
-
-  // =========================================================
-  // PHONE OTP
-  // =========================================================
-
-  const handleSendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    setError('');
-    setLoading(true);
-
-    const cleanPhone = phone.replace(/\D/g, '').slice(-10);
-
-    if (cleanPhone.length !== 10) {
-      setError('Please enter a valid 10-digit mobile number.');
-      setLoading(false);
-      return;
+    if (!email.trim() || !password) {
+      setError('Please enter your email and password.')
+      return
     }
 
-    if (!isSupabaseMode) {
-      setError(
-        'Customer authentication is not configured. Set NEXT_PUBLIC_DATA_MODE=supabase.'
-      );
-      setLoading(false);
-      return;
-    }
+    setLoading(true)
 
     try {
-      const { error: sbError } =
-        await supabase.auth.signInWithOtp({
-          phone: `+91${cleanPhone}`,
-        });
+      const { data, error: loginError } =
+        await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        })
 
-      if (sbError) {
-        throw sbError;
+      if (loginError) {
+        throw loginError
       }
 
-      setOtp('');
-      setStep('otp');
+      if (!data.user) {
+        throw new Error('Login failed. Please try again.')
+      }
+
+      const user = data.user
+
+      // Check whether the customer already has an address
+      const { data: address, error: addressError } =
+        await supabase
+          .from('addresses')
+          .select('id')
+          .eq('user_id', user.id)
+          .limit(1)
+          .maybeSingle()
+
+      if (addressError) {
+        console.error('Address check error:', addressError)
+      }
+
+      // Save basic local user information
+      const metadata = user.user_metadata || {}
+
+      localStorage.setItem(
+        'dashkirana_user',
+        JSON.stringify({
+          id: user.id,
+          name:
+            metadata.full_name ||
+            metadata.name ||
+            user.email?.split('@')[0] ||
+            'Customer',
+          email: user.email || '',
+        })
+      )
+
+      window.dispatchEvent(
+        new Event('dashkirana_data_changed')
+      )
+
+      if (!address) {
+        router.replace('/account/setup')
+      } else {
+        router.replace('/')
+      }
+
+      router.refresh()
     } catch (err: any) {
+      console.error(err)
+
       setError(
         err?.message ||
-          'Unable to send OTP. Please try again.'
-      );
+          'Unable to login. Please check your email and password.'
+      )
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
-  // =========================================================
-  // GOOGLE LOGIN
-  // =========================================================
-
-  const handleGoogleLogin = async () => {
-    setError('');
-    setLoading(true);
-
-    if (!isSupabaseMode) {
-      setError(
-        'Customer authentication is not configured. Set NEXT_PUBLIC_DATA_MODE=supabase.'
-      );
-      setLoading(false);
-      return;
-    }
+  async function handleGoogleLogin() {
+    setError('')
+    setGoogleLoading(true)
 
     try {
-      const { error: sbError } =
+      const { error: googleError } =
         await supabase.auth.signInWithOAuth({
           provider: 'google',
-
           options: {
-            // IMPORTANT:
-            // Send Google OAuth back to our Supabase
-            // callback route instead of directly to "/".
             redirectTo: `${window.location.origin}/auth/callback`,
           },
-        });
+        })
 
-      if (sbError) {
-        throw sbError;
+      if (googleError) {
+        throw googleError
       }
     } catch (err: any) {
+      console.error(err)
+
       setError(
         err?.message ||
-          'Unable to continue with Google. Please try again.'
-      );
-      setLoading(false);
+          'Google login failed. Please try again.'
+      )
+
+      setGoogleLoading(false)
     }
-  };
-
-  // =========================================================
-  // VERIFY PHONE OTP
-  // =========================================================
-
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    setError('');
-    setLoading(true);
-
-    const cleanPhone = phone.replace(/\D/g, '').slice(-10);
-    const finalName = name.trim() || 'Customer';
-
-    if (!isSupabaseMode) {
-      setError(
-        'Customer authentication is not configured.'
-      );
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const { data, error: sbError } =
-        await supabase.auth.verifyOtp({
-          phone: `+91${cleanPhone}`,
-          token: otp.trim(),
-          type: 'sms',
-        });
-
-      if (sbError) {
-        setError(sbError.message);
-        setLoading(false);
-        return;
-      }
-
-      // Create/update customer profile
-      if (data?.user) {
-        try {
-          await supabase.from('profiles').upsert({
-            id: data.user.id,
-            full_name: finalName,
-            phone: cleanPhone,
-            role: 'customer',
-          });
-        } catch {
-          // Don't block login if profile update fails
-        }
-      }
-
-      // Save local customer information
-      if (typeof window !== 'undefined') {
-        const userObj = {
-          phone: cleanPhone,
-          name: finalName,
-          id: data?.user?.id || `user-${cleanPhone}`,
-          loggedInAt: new Date().toISOString(),
-        };
-
-        localStorage.setItem(
-          'dashkirana_user',
-          JSON.stringify(userObj)
-        );
-
-        window.dispatchEvent(
-          new Event('dashkirana_data_changed')
-        );
-      }
-
-      router.push('/');
-    } catch (err: any) {
-      setError(
-        err?.message ||
-          'Verification failed. Please try again.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // =========================================================
-  // UI
-  // =========================================================
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 max-w-md mx-auto flex flex-col justify-between customer-shell">
+    <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-8">
+      <div className="w-full max-w-md">
 
-      <div>
-
-        {/* Header navigation */}
-        <div className="flex items-center justify-between mb-6">
-
-          <button
-            onClick={() => {
-              if (step === 'otp') {
-                setStep('phone');
-              } else {
-                router.back();
-              }
-            }}
-            className="p-2 rounded-full hover:bg-gray-100 text-gray-700 transition"
-            aria-label="Back"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-
-          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-            {step === 'phone'
-              ? 'Step 1 of 2'
-              : 'Step 2 of 2'}
-          </span>
-
-        </div>
-
-        {/* Branding */}
-        <div className="text-center mb-6">
-
-          <div className="w-14 h-14 bg-emerald-600 text-white rounded-2xl flex items-center justify-center mx-auto text-2xl shadow-lg shadow-emerald-600/20">
-            ⚡
+        {/* Logo / Header */}
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-600 flex items-center justify-center shadow-lg mb-4">
+            <span className="text-white text-2xl font-black">
+              DK
+            </span>
           </div>
 
-          <h1 className="text-xl font-black text-gray-900 mt-3 tracking-tight">
-            Login to DashKirana
+          <h1 className="text-3xl font-black text-gray-900">
+            Welcome to DashKirana
           </h1>
 
-          <p className="text-xs text-gray-500 mt-0.5">
-            Order fresh groceries directly from your local store.
+          <p className="text-sm text-gray-500 mt-2">
+            Login to continue shopping
           </p>
-
         </div>
 
-        {/* Form container */}
-        <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-4">
+        {/* Login Card */}
+        <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
 
-          {step === 'phone' ? (
+          {/* Google Login */}
+          <button
+            type="button"
+            onClick={handleGoogleLogin}
+            disabled={googleLoading || loading}
+            className="w-full h-12 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60 flex items-center justify-center gap-3 font-bold text-sm text-gray-800 transition"
+          >
+            {googleLoading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Chrome className="w-5 h-5" />
+            )}
 
-            <form
-              onSubmit={handleSendOtp}
-              className="space-y-4"
-            >
+            {googleLoading
+              ? 'Connecting to Google...'
+              : 'Continue with Google'}
+          </button>
 
-              {/* Phone number */}
-              <div>
+          {/* Divider */}
+          <div className="flex items-center gap-3 my-6">
+            <div className="h-px bg-gray-200 flex-1" />
 
-                <label className="block text-xs font-bold text-gray-700 mb-1.5">
-                  Mobile Number
-                </label>
+            <span className="text-xs font-semibold text-gray-400">
+              OR
+            </span>
 
-                <div className="relative flex items-center">
+            <div className="h-px bg-gray-200 flex-1" />
+          </div>
 
-                  <span className="absolute left-3 text-xs font-bold text-gray-500 border-r pr-2 border-gray-200">
-                    +91
-                  </span>
+          {/* Email Login */}
+          <form
+            onSubmit={handleEmailLogin}
+            className="space-y-4"
+          >
 
-                  <input
-                    required
-                    type="tel"
-                    inputMode="numeric"
-                    placeholder="Enter 10-digit mobile number"
-                    value={phone}
-                    onChange={(e) =>
-                      setPhone(
-                        e.target.value
-                          .replace(/\D/g, '')
-                          .slice(0, 10)
-                      )
-                    }
-                    className="w-full pl-14 pr-3 py-3 border border-gray-200 bg-gray-50 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition"
-                  />
+            {/* Email */}
+            <div>
+              <label className="text-xs font-bold text-gray-700">
+                Email
+              </label>
 
-                </div>
-
-                <p className="text-[11px] text-gray-400 mt-1">
-                  Works with any mobile number.
-                </p>
-
-              </div>
-
-              {/* Error */}
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-200 text-red-600 rounded-xl text-xs flex items-center gap-2">
-
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-
-                  <span>{error}</span>
-
-                </div>
-              )}
-
-              {/* Get OTP */}
-              <button
-                type="submit"
-                disabled={
-                  loading ||
-                  phone.replace(/\D/g, '').length !== 10
-                }
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3.5 rounded-xl font-black text-sm shadow-md transition disabled:opacity-50"
-              >
-                {loading
-                  ? 'Sending OTP...'
-                  : 'Get OTP →'}
-              </button>
-
-              {/* Divider */}
-              <div className="flex items-center gap-3 py-1">
-
-                <div className="h-px flex-1 bg-gray-200" />
-
-                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                  or
-                </span>
-
-                <div className="h-px flex-1 bg-gray-200" />
-
-              </div>
-
-              {/* Google Login */}
-              <button
-                type="button"
-                onClick={handleGoogleLogin}
-                disabled={loading}
-                className="w-full border border-gray-200 bg-white hover:bg-gray-50 text-gray-800 py-3.5 rounded-xl font-black text-sm transition disabled:opacity-50 flex items-center justify-center gap-3"
-              >
-
-                <span className="flex h-5 w-5 items-center justify-center rounded-full border border-gray-200 text-[13px] font-bold">
-                  G
-                </span>
-
-                {loading
-                  ? 'Connecting...'
-                  : 'Continue with Google'}
-
-              </button>
-
-            </form>
-
-          ) : (
-
-            <form
-              onSubmit={handleVerifyOtp}
-              className="space-y-4"
-            >
-
-              {/* Name */}
-              <div>
-
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  Your Full Name
-                </label>
+              <div className="relative mt-1">
+                <Mail className="absolute left-3 top-3.5 w-4 h-4 text-gray-400" />
 
                 <input
-                  type="text"
-                  placeholder="Enter your name (e.g., Priya Verma)"
-                  value={name}
+                  type="email"
+                  value={email}
                   onChange={(e) =>
-                    setName(e.target.value)
+                    setEmail(e.target.value)
                   }
-                  className="w-full p-3 border border-gray-200 bg-gray-50 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition"
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  className="w-full pl-10 pr-3 py-3 rounded-xl border border-gray-200 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                 />
-
               </div>
+            </div>
 
-              {/* OTP */}
-              <div>
+            {/* Password */}
+            <div>
+              <label className="text-xs font-bold text-gray-700">
+                Password
+              </label>
 
-                <div className="flex justify-between items-center mb-1">
-
-                  <label className="text-xs font-bold text-gray-700">
-                    6-Digit Verification OTP
-                  </label>
-
-                  <button
-                    type="button"
-                    onClick={() => setStep('phone')}
-                    className="text-[11px] text-emerald-600 hover:underline font-bold"
-                  >
-                    Change Number
-                  </button>
-
-                </div>
+              <div className="relative mt-1">
+                <Lock className="absolute left-3 top-3.5 w-4 h-4 text-gray-400" />
 
                 <input
-                  required
-                  type="tel"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={otp}
+                  type="password"
+                  value={password}
                   onChange={(e) =>
-                    setOtp(
-                      e.target.value
-                        .replace(/\D/g, '')
-                        .slice(0, 6)
-                    )
+                    setPassword(e.target.value)
                   }
-                  placeholder="Enter the OTP sent to your phone"
-                  className="w-full text-center tracking-widest border border-gray-200 bg-gray-50 rounded-xl p-3 text-xl font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition"
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  className="w-full pl-10 pr-3 py-3 rounded-xl border border-gray-200 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                 />
-
-                <p className="text-[11px] text-gray-400 text-center mt-1">
-                  Sent to +91 {phone}
-                </p>
-
               </div>
+            </div>
 
-              {/* Error */}
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-200 text-red-600 rounded-xl text-xs flex items-center gap-2">
+            {/* Error */}
+            {error && (
+              <div className="bg-red-50 border border-red-100 text-red-600 rounded-xl p-3 text-xs font-semibold">
+                {error}
+              </div>
+            )}
 
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-
-                  <span>{error}</span>
-
-                </div>
+            {/* Login Button */}
+            <button
+              type="submit"
+              disabled={loading || googleLoading}
+              className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-black text-sm flex items-center justify-center gap-2 transition"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                'Login'
               )}
+            </button>
+          </form>
 
-              {/* Verify */}
-              <button
-                type="submit"
-                disabled={
-                  loading || otp.length !== 6
-                }
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3.5 rounded-xl font-black text-sm shadow-md transition disabled:opacity-50"
-              >
-                {loading
-                  ? 'Verifying...'
-                  : 'Verify & Continue →'}
-              </button>
+          {/* Register */}
+          <div className="text-center mt-6">
+            <p className="text-sm text-gray-500">
+              Don't have an account?
+            </p>
 
-            </form>
-
-          )}
-
+            <button
+              type="button"
+              onClick={() => router.push('/register')}
+              className="mt-1 text-sm font-black text-emerald-600 hover:text-emerald-700"
+            >
+              Create an account
+            </button>
+          </div>
         </div>
 
+        <p className="text-center text-[11px] text-gray-400 mt-5">
+          Secure authentication powered by Supabase
+        </p>
       </div>
-
-      {/* Footer */}
-      <div className="text-center text-[11px] text-gray-400 py-4 flex items-center justify-center gap-1.5">
-
-        <ShieldCheck className="w-4 h-4 text-emerald-600" />
-
-        <span>
-          Safe & Secure Local Login • DashKirana
-        </span>
-
-      </div>
-
-    </div>
-  );
+    </main>
+  )
 }
-```
