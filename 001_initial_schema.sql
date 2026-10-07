@@ -1,0 +1,31 @@
+create extension if not exists "pgcrypto";
+create table if not exists public.profiles (id uuid primary key references auth.users(id) on delete cascade, full_name text, phone text, role text not null default 'customer' check (role in ('customer','admin')), created_at timestamptz not null default now());
+create table if not exists public.categories (id uuid primary key default gen_random_uuid(), name text not null, slug text unique not null, icon text default '🛒', active boolean not null default true, sort_order int not null default 0, created_at timestamptz not null default now());
+create table if not exists public.products (id uuid primary key default gen_random_uuid(), category_id uuid references public.categories(id) on delete set null, name text not null, slug text unique not null, description text default '', price numeric(10,2) not null, mrp numeric(10,2) not null, stock int not null default 0, unit text not null, image_url text default '', featured boolean not null default false, active boolean not null default true, created_at timestamptz not null default now(), updated_at timestamptz not null default now());
+create table if not exists public.addresses (id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id) on delete cascade, name text not null, phone text not null, address_line text not null, area text not null, city text not null, pincode text not null, landmark text default '', delivery_instructions text default '', is_default boolean default false, created_at timestamptz not null default now());
+create table if not exists public.orders (id uuid primary key default gen_random_uuid(), user_id uuid references auth.users(id) on delete set null, customer_name text not null, customer_phone text not null, address_id uuid references public.addresses(id) on delete set null, subtotal numeric(10,2) not null, delivery_fee numeric(10,2) not null default 0, total numeric(10,2) not null, payment_method text not null, status text not null default 'Placed', created_at timestamptz not null default now(), updated_at timestamptz not null default now());
+create table if not exists public.order_items (id uuid primary key default gen_random_uuid(), order_id uuid not null references public.orders(id) on delete cascade, product_id uuid references public.products(id) on delete set null, product_name text not null, unit text not null, price numeric(10,2) not null, quantity int not null check (quantity > 0), image text default '');
+create or replace function public.is_admin() returns boolean language sql stable security definer set search_path=public as $$ select exists(select 1 from public.profiles where id=auth.uid() and role='admin'); $$;
+alter table public.profiles enable row level security; alter table public.categories enable row level security; alter table public.products enable row level security; alter table public.addresses enable row level security; alter table public.orders enable row level security; alter table public.order_items enable row level security;
+drop policy if exists "profiles own read" on public.profiles; create policy "profiles own read" on public.profiles for select using (id=auth.uid() or public.is_admin());
+drop policy if exists "profiles own update" on public.profiles; create policy "profiles own update" on public.profiles for update using (id=auth.uid());
+drop policy if exists "public read categories" on public.categories; create policy "public read categories" on public.categories for select using (active=true or public.is_admin());
+drop policy if exists "public read products" on public.products; create policy "public read products" on public.products for select using (active=true or public.is_admin());
+drop policy if exists "admin manage categories" on public.categories; create policy "admin manage categories" on public.categories for all using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "admin manage products" on public.products; create policy "admin manage products" on public.products for all using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "own addresses" on public.addresses; create policy "own addresses" on public.addresses for all using (user_id=auth.uid() or public.is_admin()) with check (user_id=auth.uid() or public.is_admin());
+drop policy if exists "own orders" on public.orders; create policy "own orders" on public.orders for select using (user_id=auth.uid() or public.is_admin());
+drop policy if exists "customer create orders" on public.orders; create policy "customer create orders" on public.orders for insert with check (user_id=auth.uid());
+drop policy if exists "admin update orders" on public.orders; create policy "admin update orders" on public.orders for update using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "own order items" on public.order_items; create policy "own order items" on public.order_items for select using (exists(select 1 from public.orders o where o.id=order_id and (o.user_id=auth.uid() or public.is_admin())));
+drop policy if exists "customer create order items" on public.order_items; create policy "customer create order items" on public.order_items for insert with check (exists(select 1 from public.orders o where o.id=order_id and o.user_id=auth.uid()));
+insert into public.categories (name,slug,icon,sort_order) values ('Rice & Grains','rice-grains','🌾',1),('Dals','dals','🫘',2),('Oils','oils','🛢️',3),('Snacks','snacks','🍿',4),('Beverages','beverages','🥤',5),('Dairy','dairy','🥛',6),('Fruits & Vegetables','fruits-vegetables','🥬',7),('Personal Care','personal-care','🧴',8),('Household','household','🧹',9) on conflict (slug) do nothing;
+-- After creating the shop owner's Supabase Auth user, run: update public.profiles set role='admin' where id='YOUR_AUTH_USER_UUID';
+
+create or replace function public.handle_new_user() returns trigger language plpgsql security definer set search_path=public as $$
+begin
+  insert into public.profiles (id, full_name, phone) values (new.id, coalesce(new.raw_user_meta_data->>'full_name','Customer'), new.phone) on conflict (id) do nothing;
+  return new;
+end; $$;
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created after insert on auth.users for each row execute procedure public.handle_new_user();
