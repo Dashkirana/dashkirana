@@ -14,7 +14,9 @@ export default function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState('')
 
-  async function handleEmailLogin(e: FormEvent<HTMLFormElement>) {
+  async function handleEmailLogin(
+    e: FormEvent<HTMLFormElement>
+  ) {
     e.preventDefault()
 
     setError('')
@@ -43,20 +45,13 @@ export default function LoginPage() {
 
       const user = data.user
 
-      // Check whether the customer already has an address
-      const { data: address, error: addressError } =
-        await supabase
-          .from('addresses')
-          .select('id')
-          .eq('user_id', user.id)
-          .limit(1)
-          .maybeSingle()
+      const { data: address } = await supabase
+        .from('addresses')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1)
+        .maybeSingle()
 
-      if (addressError) {
-        console.error('Address check error:', addressError)
-      }
-
-      // Save basic local user information
       const metadata = user.user_metadata || {}
 
       localStorage.setItem(
@@ -127,7 +122,6 @@ export default function LoginPage() {
     <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md">
 
-        {/* Logo / Header */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-600 flex items-center justify-center shadow-lg mb-4">
             <span className="text-white text-2xl font-black">
@@ -144,10 +138,8 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Login Card */}
         <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
 
-          {/* Google Login */}
           <button
             type="button"
             onClick={handleGoogleLogin}
@@ -165,7 +157,6 @@ export default function LoginPage() {
               : 'Continue with Google'}
           </button>
 
-          {/* Divider */}
           <div className="flex items-center gap-3 my-6">
             <div className="h-px bg-gray-200 flex-1" />
 
@@ -176,13 +167,11 @@ export default function LoginPage() {
             <div className="h-px bg-gray-200 flex-1" />
           </div>
 
-          {/* Email Login */}
           <form
             onSubmit={handleEmailLogin}
             className="space-y-4"
           >
 
-            {/* Email */}
             <div>
               <label className="text-xs font-bold text-gray-700">
                 Email
@@ -204,7 +193,6 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Password */}
             <div>
               <label className="text-xs font-bold text-gray-700">
                 Password
@@ -226,14 +214,12 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Error */}
             {error && (
               <div className="bg-red-50 border border-red-100 text-red-600 rounded-xl p-3 text-xs font-semibold">
                 {error}
               </div>
             )}
 
-            {/* Login Button */}
             <button
               type="submit"
               disabled={loading || googleLoading}
@@ -250,20 +236,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Register */}
-          <div className="text-center mt-6">
-            <p className="text-sm text-gray-500">
-              Don't have an account?
-            </p>
-
-            <button
-              type="button"
-              onClick={() => router.push('/register')}
-              className="mt-1 text-sm font-black text-emerald-600 hover:text-emerald-700"
-            >
-              Create an account
-            </button>
-          </div>
         </div>
 
         <p className="text-center text-[11px] text-gray-400 mt-5">
