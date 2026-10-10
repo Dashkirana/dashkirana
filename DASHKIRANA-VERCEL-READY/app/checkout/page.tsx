@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, MapPin, CreditCard, Banknote, ShieldCheck } from 'lucide-react';
 import { CartItem, PaymentMethod, Address } from '../../lib/types';
 import { createOrder } from '../../lib/services/store';
+import { isInsideDeliveryZone } from '../../lib/delivery-zone';
 
 export default function CheckoutPage() {
   const router = useRouter();
