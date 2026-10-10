@@ -24,7 +24,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const hasImage =
     typeof product.image === 'string' &&
     product.image.trim().startsWith('http');
-
+console.log('PRODUCT IMAGE DEBUG:', product.name, product.image);
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-3 shadow-sm hover:shadow-md transition flex flex-col justify-between relative overflow-hidden">
 
