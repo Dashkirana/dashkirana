@@ -16,12 +16,11 @@ export default function CheckoutPage() {
   const [address, setAddress] = useState<Address>({
     name: 'Customer',
     phone: '9999999999',
-    addressLine: 'Door No. 45/12-A, Park Road',
-    area: 'NR Peta',
-    city: 'Kurnool',
-    pincode: '518004',
-    landmark: 'Near Govt Hospital',
-    deliveryInstructions: 'Leave at front gate if busy',
+   addressLine: '',
+area: '',
+city: 'Visakhapatnam',
+pincode: '',
+landmark: '',
   });
 
   useEffect(() => {
