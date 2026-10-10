@@ -239,7 +239,14 @@ export async function getOrders(): Promise<Order[]> {
         unit: i.unit,
         price: Number(i.price),
         quantity: i.quantity,
-        image: i.image || '🛒',
+     image:
+  typeof p.image_url === 'string' &&
+  /^https?:\/\//i.test(p.image_url.trim())
+    ? p.image_url.trim()
+    : typeof p.image === 'string' &&
+        /^https?:\/\//i.test(p.image.trim())
+      ? p.image.trim()
+      : '🛒',
       })),
       subtotal: Number(o.subtotal),
       deliveryFee: Number(o.delivery_fee),
